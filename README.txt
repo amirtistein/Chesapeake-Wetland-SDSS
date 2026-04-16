@@ -7,11 +7,6 @@
 - Complete Flask + Leaflet dashboard (local prototype)
 - Pre-computed static wetland change maps and metrics used by the dashboard
 
-## Raw datasets 
-The full dataset (Sentinel-2 RGB 2017 & 2022, reference LULC, change map) is available on Zenodo:  
-**https://doi.org/10.5281/zenodo.xxxxxxx** 
-
-
 ## How to run the dashboard locally
 1. Clone or download this repository
 2. `cd Chesapeake-Wetland-SDSS`
