@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackwater Wetland Change Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intro.js/7.0.0/introjs.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/intro.js/7.0.0/intro.min.js"></script>
+    <style>
+        body { background-color: #644dccff; } /* Light blue-gray background */
+        #map { height: calc(100vh - 100px); } /* Full screen minus title height */
+        .title-bg {
+            background: linear-gradient(to right, #0bdae5ff, #1e3a8a);
+        }
+        .button-table {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 0.75rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            padding: 0.75rem;
+        }
+        .button-table button, .button-table select {
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.3s ease;
+            border-radius: 0.5rem;
+        }
+        .button-table button:hover, .button-table select:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .legend-table {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 0.75rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            padding: 0.75rem;
+            display: none;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        .metrics-table {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 0.75rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            padding: 1rem;
+            display: none;
+            max-width: 400px;
+        }
+        .metrics-table table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .metrics-table th, .metrics-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .metrics-table th {
+            background: linear-gradient(to bottom, #e0f2fe, #bae6fd);
+            color: #1e3a8a;
+            font-weight: 700;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .metrics-table td {
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .metrics-table tr:last-child td {
+            border-bottom: none;
+        }
+        .metrics-table tr:hover {
+            background-color: #f0f9ff;
+            transition: background-color 0.2s ease;
+        }
+        .map-container { position: relative; }
+        #metricsChart { max-height: 200px; margin-top: 1.5rem; }
+        #recommendations {
+            max-width: 300px;
+            z-index: 1100; /* Above other elements */
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 0.75rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        }
+        #recommendations h3 {
+            color: #1e3a8a;
+            font-weight: 700;
+        }
+        #recommendations ul li {
+            color: #1f2937;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto p-4">
+        <!-- Title and Subtitle -->
+        <div class="title-bg rounded-lg shadow-lg p-4 mb-0">
+            <h1 class="text-4xl font-bold text-white text-center">🌊 Blackwater Wetland Change Dashboard</h1>
+            <p class="text-center text-white mt-2">Explore land cover changes in Blackwater National Wildlife Refuge (2017-2022)</p>
+        </div>
+
+        <!-- Toggle Buttons (Top-Right Table, Lower) -->
+        <div class="absolute top-32 right-4 button-table">
+            <table class="text-center">
+                <tr>
+                    <td><button id="tourButton" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 w-full">🗺️ Start Tour</button></td>
+                </tr>
+                <tr>
+                    <td><button id="watershedToggle" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full">Hide Watershed Boundary</button></td>
+                </tr>
+                <tr>
+                    <td><button id="changeMapToggle" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 w-full">Show Change Map</button></td>
+                </tr>
+                <tr>
+                    <td>
+                        <select id="baseMapSelect" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 w-full">
+                            <option value="osm">OpenStreetMap</option>
+                            <option value="esri">Esri World Imagery</option>
+                            <option value="cartodb">CartoDB Positron</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <td><button id="snapshotButton" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 w-full">📷 Download Snapshot</button></td>
+                </tr>
+                <tr>
+                    <td><button id="exportMetricsButton" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 w-full">📥 Export Metrics</button></td>
+                </tr>
+                <tr>
+                    <td><button id="recommendationsButton" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 w-full">📋 View Recommendations</button></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Map Section -->
+        <div class="map-container">
+            <div id="map" class="rounded-lg shadow-md"></div>
+            <!-- Legend Table (Bottom-Center) -->
+            <div id="legend" class="legend-table absolute bottom-4 left-1/2 transform -translate-x-1/2">
+                <table class="text-center">
+                    <tr>
+                        <td><span class="legend-color" style="background-color: #FF0000;"></span>Loss</td>
+                    </tr>
+                    <tr>
+                        <td><span class="legend-color" style="background-color: #00FF00;"></span>Gain</td>
+                    </tr>
+                </table>
+            </div>
+            <!-- Metrics Table and Chart (Left Side, Shifted Right) -->
+            <div id="metrics" class="metrics-table absolute top-4 left-12">
+                <table class="text-left">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 font-semibold">Metric</th>
+                            <th class="px-4 py-2 font-semibold">Value (km²)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="px-4 py-2">Wetland Area 2017</td>
+                            <td class="px-4 py-2">53.42</td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-2">Wetland Area 2022</td>
+                            <td class="px-4 py-2">56.70</td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-2">Loss</td>
+                            <td class="px-4 py-2">6.26</td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-2">Gain</td>
+                            <td class="px-4 py-2">9.54</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <canvas id="metricsChart"></canvas>
+            </div>
+            <!-- Recommendations Popover -->
+            <div id="recommendations" class="hidden absolute top-4 right-24 bg-white p-4 rounded-lg shadow-lg z-1100 max-w-sm">
+                <h3 class="text-lg font-semibold">Policy Recommendations</h3>
+                <ul class="list-disc pl-4">
+                    <li>Loss (6.26 km²): Prioritize restoration in red zones, especially near existing wetlands to enhance ecological corridors.</li>
+                    <li>Gain (9.54 km²): Designate green areas as conservation buffers; promote protection through stewardship or zoning.</li>
+                    <li>Net Gain (3.28 km²): Monitor annually. Trigger alerts if net loss exceeds 1% to support proactive intervention.</li>
+                    <li>Climate Risk Zones: Overlay flood risk to guide adaptation-focused restoration and policy alignment.</li>
+                </ul>
+                <button id="closeRecommendations" class="mt-2 bg-gray-200 px-2 py-1 rounded hover:bg-gray-300">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Leaflet map
+        var map = L.map('map');
+
+        // Base map layers
+        const baseMaps = {
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }),
+            esri: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '© Esri'
+            }),
+            cartodb: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                attribution: '© <a href="https://carto.com/attributions">CartoDB</a>'
+            })
+        };
+
+        // Set default base map
+        baseMaps.osm.addTo(map);
+
+        // Initialize overlay layers
+        var changeMapOverlay = null;
+        const overlayLayers = {};
+
+        // Initialize watershed layer with tooltips
+        const watershedLayer = L.geoJSON(null, {
+            style: {
+                color: '#228B22',
+                weight: 2,
+                dashArray: '6',
+                fillOpacity: 0.1
+            },
+            onEachFeature: function(feature, layer) {
+                layer.bindPopup(`Watershed: ${feature.properties.name || 'Blackwater'}<br>Area: ${feature.properties.area || 'N/A'} km²`);
+            }
+        });
+        overlayLayers["Watershed Boundaries"] = watershedLayer;
+
+        // Load bounds and zoom to Blackwater NWR
+        fetch('/static/geojson/change_map_bounds.json')
+            .then(response => {
+                if (!response.ok) throw new Error('Bounds file not found');
+                return response.json();
+            })
+            .then(bounds => {
+                const imageBounds = [[bounds.lat_min, bounds.lon_min], [bounds.lat_max, bounds.lon_max]];
+                map.fitBounds(imageBounds, { padding: [50, 50] });
+                changeMapOverlay = L.imageOverlay('/static/tiles/change_map.png', imageBounds, {
+                    opacity: 0.7
+                });
+                overlayLayers["Wetland Change Map"] = changeMapOverlay;
+            })
+            .catch(error => {
+                console.error('Error loading bounds:', error);
+                map.setView([38.43, -76.08], 11);
+            });
+
+        // Load watershed boundaries (shown by default)
+        fetch('/static/geojson/watershed_boundary.geojson')
+            .then(response => {
+                if (!response.ok) throw new Error('Watershed GeoJSON not found');
+                return response.json();
+            })
+            .then(data => {
+                watershedLayer.addData(data);
+                watershedLayer.addTo(map);
+            })
+            .catch(error => console.error('Error loading watershed GeoJSON:', error));
+
+        // Toggle buttons, legend, and metrics
+        const legend = document.getElementById('legend');
+        const metrics = document.getElementById('metrics');
+        document.getElementById('watershedToggle').addEventListener('click', function() {
+            if (watershedLayer) {
+                if (map.hasLayer(watershedLayer)) {
+                    map.removeLayer(watershedLayer);
+                    this.textContent = 'Show Watershed Boundary';
+                } else {
+                    map.addLayer(watershedLayer);
+                    this.textContent = 'Hide Watershed Boundary';
+                }
+            }
+        });
+
+        document.getElementById('changeMapToggle').addEventListener('click', function() {
+            if (changeMapOverlay) {
+                if (map.hasLayer(changeMapOverlay)) {
+                    map.removeLayer(changeMapOverlay);
+                    this.textContent = 'Show Change Map';
+                    legend.style.display = 'none';
+                    metrics.style.display = 'none';
+                } else {
+                    map.addLayer(changeMapOverlay);
+                    this.textContent = 'Hide Change Map';
+                    legend.style.display = 'block';
+                    metrics.style.display = 'block';
+                }
+            } else {
+                console.error('Change map overlay not initialized');
+            }
+        });
+
+        // Base map switcher
+        document.getElementById('baseMapSelect').addEventListener('change', function() {
+            const selected = this.value;
+            Object.keys(baseMaps).forEach(key => {
+                if (map.hasLayer(baseMaps[key])) {
+                    map.removeLayer(baseMaps[key]);
+                }
+            });
+            baseMaps[selected].addTo(map);
+        });
+
+        // Hardcode metrics chart
+        const metricsData = [
+            { label: 'Wetland Area 2017', value: 53.42, color: 'rgba(54, 162, 235, 0.5)', border: 'rgba(54, 162, 235, 1)' },
+            { label: 'Wetland Area 2022', value: 56.70, color: 'rgba(100, 100, 100, 0.5)', border: 'rgba(100, 100, 100, 1)' },
+            { label: 'Loss', value: 6.26, color: 'rgba(255, 99, 132, 0.5)', border: 'rgba(255, 99, 132, 1)' },
+            { label: 'Gain', value: 9.54, color: 'rgba(75, 192, 192, 0.5)', border: 'rgba(75, 192, 192, 1)' }
+        ];
+        new Chart(document.getElementById('metricsChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: metricsData.map(row => row.label),
+                datasets: [{
+                    label: 'Metrics (km²)',
+                    data: metricsData.map(row => row.value),
+                    backgroundColor: metricsData.map(row => row.color),
+                    borderColor: metricsData.map(row => row.border),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(2);
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Snapshot button functionality
+        document.getElementById('snapshotButton').addEventListener('click', function() {
+            html2canvas(document.body).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'blackwater_dashboard_snapshot.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }).catch(error => {
+                console.error('Error capturing snapshot:', error);
+                alert('Failed to capture snapshot. Please try again.');
+            });
+        });
+
+        // Export metrics button functionality
+        document.getElementById('exportMetricsButton').addEventListener('click', function() {
+            const metrics = [
+                { Metric: 'Wetland Area 2017 (km²)', Value: 53.42 },
+                { Metric: 'Wetland Area 2022 (km²)', Value: 56.70 },
+                { Metric: 'Loss (km²)', Value: 6.26 },
+                { Metric: 'Gain (km²)', Value: 9.54 }
+            ];
+            const csvContent = 'data:text/csv;charset=utf-8,'
+                + 'Metric,Value (km²)\n'
+                + metrics.map(row => `"${row.Metric}",${row.Value}`).join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'blackwater_metrics.csv');
+            link.click();
+        });
+
+        // Recommendations popover
+        const recommendationsButton = document.getElementById('recommendationsButton');
+        const recommendations = document.getElementById('recommendations');
+        const closeRecommendations = document.getElementById('closeRecommendations');
+
+        recommendationsButton.addEventListener('click', function() {
+            recommendations.classList.toggle('hidden');
+        });
+
+        closeRecommendations.addEventListener('click', function() {
+            recommendations.classList.add('hidden');
+        });
+
+        // Guided tour
+        document.getElementById('tourButton').addEventListener('click', function() {
+            introJs().setOptions({
+                steps: [
+                    { element: '#tourButton', intro: 'Start here to explore the dashboard features.' },
+                    { element: '#changeMapToggle', intro: 'Toggle the change map to view wetland changes.' },
+                    { element: '#metrics', intro: 'View metrics and a chart when the change map is shown.' },
+                    { element: '#snapshotButton', intro: 'Download a snapshot of the dashboard.' },
+                    { element: '#exportMetricsButton', intro: 'Export metrics as a CSV file.' },
+                    { element: '#recommendationsButton', intro: 'View policy recommendations based on the data.' }
+                ]
+            }).start();
+        });
+    </script>
+</body>
+</html>
